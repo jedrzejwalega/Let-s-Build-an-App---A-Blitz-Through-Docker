@@ -216,3 +216,12 @@ Finally, we define the default launch command for our image - to launch our run_
 CMD ["sh", "/app/baduk.ninja/run_services.sh"]
 ```
 At this point we would save the Dockerfile and cd into the directory it is located into. Running a docker build command there should start up the creation of the image.
+# What's next?
+The image we've just built works fine, but in a large scale application this setup would be difficult to manage. Large apps tend to work in a global way - you have instances of your app running in many geographic locations. You also want to have control over how many instances of your app are available to the users to meet the demand. Better yet, you would like to launch new containers when the demand increases and shut them off when it decreases to save compute. 
+
+Finally, you might want to be able to scale just separate parts of the app - like backend, frontend or other related services. That's why most large scale apps would not pack both frontend and backend into a single image. A popular approach is to create an app based on microservices, where every major function of the app has their own image, which can be scaled independently. It also makes it easier when deploying updates - you need to update just one micro service, not the whole app.
+
+The microservice approach introduces a question - if my services will be running separately, how will they communicate? That and other issues mentioned earlier can be handled by **Kubernetes**.
+
+It's a technology aimed at orchestrating the containers to work together. You can define complex scaling strategies, control the amount of running containers, their placement and communication. Although Kubernetes calls them pods, the basic blocks of the technology are not unlike the containers you're already familiar with. It's a very powerful tech to enhance your app with once it grows, so if you're looking to strengthen your ops skills, [Kubernetes](https://www.docker.com/) is the direction you might want to grow into.
+
