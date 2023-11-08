@@ -39,7 +39,7 @@ docker run -it --name container_name image_name
 ```
 3) Launch an interactive shell to get inside the container and interact with the files and logs. **Extremely** useful in debugging.
 ```bash
-docker exec -it container_name bash // start an 
+docker exec -it container_name bash
 ```
 4) Stop a running container. It will still be left on your system and you'll be able to restart it.
 ```bash
@@ -125,4 +125,94 @@ The major steps for our Dockerfile can be summarized as follows:
 5) Define a default command to launch upon container start
 
 # Dockerfile Code
---To be added--
+Just as described above, we will start by building our frontend. As you can see below, we start off with picking node:14 as the base image for our intermediate image and alias it as frontend-build for future reference.
+```bash
+# Stage 1: Build the React Frontend
+FROM node:14 as frontend-build
+```
+Our base image by default has a few basic directories inside. One of them is called app and it is customary to place our app's code there.
+
+We will use command WORKIDR to set our current working directory to /app/frontend. You can think of this as equivalent of the cd bash command, but WORKDIR will create you a directory in the expected path, if it doesn't yet exist (whereas cd will not).
+```bash
+# Set the working directory for the frontend
+WORKDIR /app/frontend
+```
+Once we've done that we will set an environment variable (yes, containers have their own set) to let frontend know at which address to communicate with backend. This environment variable is used at frontend build time.
+```bash
+ENV REACT_APP_BACKEND_ADDRESS=baduk.ninja:4000
+```
+We copy the frontend code from our local frontend directory into the current working directory in the image (so /app/frontend as specified earlier).
+```bash
+# Copy the frontend source code
+COPY ./frontend ./
+```
+We then install frontend libraries with npm and build the code. It will create us a build directory with the optimized files that we want to include in the final (non-intermediate) image.
+```bash
+RUN npm install
+
+# Build the frontend in production mode
+RUN npm run build
+```
+The backend build follows a similar pattern. First we mount a new base image and clone a github repo with the forked goban library we want to use. Then we copy the local backend code and sgfs files into their appropriate paths in the image, so that the directory hierarchy reflects our local project setup.
+
+In the final step we build the backend, which gives us an optimized executable for the final image.
+```bash
+# Stage 2: Build the Rust Backend
+FROM rust:1.73.0 as rust-build
+
+# Clone the goban repository
+RUN git clone https://github.com/lukaszlew/rust-goban-fork.git /app/rust-goban-fork
+
+# Set the working directory for the backend
+WORKDIR /app/baduk.ninja/backend
+
+# Copy the backend source code
+COPY ./backend ./
+COPY ./sgfs /app/baduk.ninja/sgfs
+
+# Build the Rust backend
+RUN cargo build --release
+```
+With frontend and backend optimized we move on to creating the final image. We mount Linux Alpine as our base and install some tooling necessary for the optimized frontend to launch in this minimal image.
+
+We also create a baduk.ninja app repository and switch into it. This is where we will copy our optimized code into.
+```bash
+# Stage 3: Create the Production Image
+FROM frolvlad/alpine-glibc:latest
+
+# Install Node.js and npm in the final image
+RUN apk --no-cache add nodejs npm
+
+# Install serve to serve the frontend
+RUN npm install -g serve
+
+WORKDIR /app/baduk.ninja
+```
+We reference our previously aliased frontend and backend intermediate images and copy only the optimized code into our Linux Alpine image. Then we also grab the sgfs files necessary for the backend to work properly, as well as run_services.sh file. As mentioned previously, this script, by default, will launch once we start a container based on our image. 
+```bash
+# Copy the built frontend from the frontend-build stage
+COPY --from=frontend-build /app/frontend/build frontend
+
+# Copy the built Rust binary from the rust-builder stage
+COPY --from=rust-build /app/baduk.ninja/backend/target/release/backend .
+COPY --from=rust-build /app/baduk.ninja/sgfs ./sgfs
+
+# Copy necessary scripts or files
+COPY ./run_services.sh ./
+```
+Our .sh file is not executable by default, so we grant it the necessary permissions.
+```bash
+RUN chmod +x /app/baduk.ninja/run_services.sh
+```
+We tag our image with information which ports should be exposed.
+```bash
+# Expose necessary ports
+EXPOSE 80
+EXPOSE 4000
+```
+Finally, we define the default launch command for our image - to launch our run_services.sh script. It will invoke both frontend and backend, effectively starting our app.
+```bash
+# Define the command to run your application
+CMD ["sh", "/app/baduk.ninja/run_services.sh"]
+```
+At this point we would save the Dockerfile and cd into the directory it is located into. Running a docker build command there should start up the creation of the image.
